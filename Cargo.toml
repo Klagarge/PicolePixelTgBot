@@ -6,7 +6,19 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-teloxide = { version = "0.12", features = ["macros"] }
+teloxide = { version = "0.12", features = ["default", "macros", "bincode-serializer", "sqlite-storage"] }
 log = "0.4"
 pretty_env_logger = "0.4"
 tokio = { version =  "1.8", features = ["rt-multi-thread", "macros", "rt"] }
+sqlx = { version = "0.6", default-features = false, features = [
+    "macros",
+    "sqlite",
+] }
+url = "2.5.0"
+lazy_static = "1.4.0"
+async-std = { version = "1.12", features = [] }
+async_once = "0.2"
+chrono = "0.4"
+chrono-tz = "0.8"
+chronoutil = "0.2"
+cron-parser = "0.8"
