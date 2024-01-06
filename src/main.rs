@@ -1,9 +1,18 @@
+mod user;
+use user::User;
+
+mod rank_day;
+use crate::rank_day::RankDay;
+
+use core::option;
 use async_std::task;
 use chrono::{DateTime, Datelike, Month, Utc};
 use lazy_static::lazy_static;
 use sqlx::{sqlite, Sqlite, SqlitePool};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
+use serde::de::Unexpected::Option;
+use serde_json::from_str;
 use teloxide::{
     dispatching::dialogue::{
         serializer::{Bincode, Json},
@@ -22,7 +31,11 @@ lazy_static! {
 }
 
 lazy_static! {
-    static ref LAST_CHAT_ID: Arc<Mutex<Option<ChatId>>> = Arc::new(Mutex::new(None));
+    static ref USER_LIST: Mutex<Vec<User>> = Mutex::new(Vec::new());
+}
+
+lazy_static! {
+    static ref RANK_DAY_LIST: Mutex<Vec<RankDay>> = Mutex::new(Vec::new());
 }
 
 /// These commands are supported:
@@ -56,8 +69,7 @@ async fn main() {
         .await
         .expect("Failed to set bot commands");
 
-    let last_chat_id = Arc::clone(&LAST_CHAT_ID);
-    tokio::spawn(poll_time(bot.clone(), last_chat_id));
+    tokio::spawn(poll_time(bot.clone()));
 
     let pool = SqlitePool::connect("sqlite:database.sqlite").await;
 
@@ -73,19 +85,35 @@ async fn main() {
         .await;
 }
 
-async fn poll_time(bot: Bot, last_chat_id: Arc<Mutex<Option<ChatId>>>) {
+async fn poll_time(bot: Bot) {
     loop {
+        // Get all chat id from user list
         let chat_id = {
-            let last_chat_id_guard = last_chat_id.lock().unwrap();
-            if let Some(chat_id) = *last_chat_id_guard {
-                Some(chat_id)
-            } else {
+            let user_list = USER_LIST.lock().unwrap();
+            if user_list.len() == 0 {
                 None
+            } else {
+                Some(user_list[0].get_chat_id())
             }
         };
 
         if let Some(chat_id) = chat_id {
-            send_day_rank_message(bot.clone(), chat_id, Utc::now(), None).await;
+            let user = User::new(chat_id, "test".to_string(), None);
+            let time = Utc::now()+chrono::Duration::days(1);
+            let msg_id = send_day_rank_message(bot.clone(), chat_id, std::option::Option::from(time), None).await;
+            let rank_day = RankDay::new(user, time, msg_id);
+            {
+                let mut rank_day_list = RANK_DAY_LIST.lock().unwrap();
+                rank_day_list.push(rank_day);
+
+                // print all rank day
+                for rank_day in rank_day_list.iter() {
+                    println!("Chat id: {}", rank_day.get_chat_id());
+                    println!("Time: {}", rank_day.get_time());
+                    println!("Id msg: {}", rank_day.get_id_msg());
+                }
+            }
+
         }
         task::sleep(Duration::from_secs(30)).await;
     }
@@ -109,12 +137,30 @@ fn get_month(month: u32) -> &'static str {
     }
 }
 
-async fn send_day_rank_message(bot: Bot, chat_id: ChatId, utc_time: DateTime<Utc>, id_msg: Option<MessageId>) -> MessageId {
+async fn send_day_rank_message(bot: Bot, chat_id: ChatId, utc_time: option::Option<DateTime<Utc>>, id_msg: std::option::Option<MessageId>) -> MessageId {
+    // Define utc time from rank day time if None
+    let rank_day_list = RANK_DAY_LIST.lock().unwrap();
+
+    let mut time = Utc::now();
+        match utc_time {
+        Some(utc_time) => {
+            time = utc_time;
+        },
+        None => {
+            // Get rank day from list
+            for rank_day in rank_day_list.iter() {
+                if rank_day.get_chat_id() == chat_id {
+                    time = rank_day.get_time();
+                }
+            }
+        }
+    };
+
     // Format message with date
-    let day = utc_time.day();
-    let weekday = utc_time.weekday();
-    let month = get_month(utc_time.month());
-    let year = utc_time.year();
+    let day = time.day();
+    let weekday = time.weekday();
+    let month = get_month(time.month());
+    let year = time.year();
     let text_message = format!("How drunk are you {weekday} {day} {month} {year} ?");
 
     // Create callback keyboard with ranks
@@ -183,20 +229,28 @@ async fn message_handler(
     msg: Message,
     me: Me,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    {
-        let mut last_chat_id = LAST_CHAT_ID.lock().unwrap();
-        *last_chat_id = Some(msg.chat.id);
-    }
     println!("Chat id: {}", msg.chat.id);
     if let Some(text) = msg.text() {
         match BotCommands::parse(text, me.username()) {
             Ok(Command::Start) => {
-                tokio::spawn(send_day_rank_message(
-                    bot.clone(),
-                    msg.chat.id,
-                    Utc::now(),
-                    None,
-                ));
+                // Create user and add to user list
+                let mut user_list = USER_LIST.lock().unwrap();
+                let user = User::new(msg.chat.id, "test".to_string(), None);
+                user_list.push(user.clone());
+                println!("User list size: {}", user_list.len());
+
+                //tokio::spawn(create_rank_day(bot.clone(), user.clone()));
+
+                let time = Utc::now();
+                let msg_id = send_day_rank_message(bot.clone(), msg.chat.id, std::option::Option::from(time), None).await;
+                let rank_day = RankDay::new(user, time, msg_id);
+                let mut rank_day_list = RANK_DAY_LIST.lock().unwrap();
+                rank_day_list.push(rank_day);
+
+                // Send message
+                //tokio::spawn(send_day_rank_message(bot.clone(), msg.chat.id, Utc::now(), None));
+
+
             }
             Ok(Command::Help) => {
                 bot.send_message(msg.chat.id, Command::descriptions().to_string())
@@ -225,6 +279,37 @@ async fn message_handler(
     Ok(())
 }
 
+async fn update_rank(bot: Bot, user: User, id_msg: MessageId, rankStr: String) {
+    let rank = rankStr.parse::<u8>().unwrap();
+    let mut time = Utc::now();
+
+    {
+        // get rank day from list
+        let mut rank_day_list = RANK_DAY_LIST.lock().unwrap();
+        for rank_day in rank_day_list.iter_mut() {
+            if rank_day.get_chat_id() == user.get_chat_id() {
+                if rank_day.get_id_msg() == id_msg {
+                    rank_day.set_rank(rank);
+                    time = rank_day.get_time();
+                }
+            }
+        }
+    }
+    tokio::spawn(send_day_message(bot.clone(), user.get_chat_id(), time, id_msg, rankStr.to_string()));
+}
+
+async fn create_rank_day(bot: Bot, user: User) {
+    let id = send_day_rank_message(bot.clone(), user.clone().get_chat_id(), std::option::Option::from(Utc::now()), None).await;
+
+    let rank_day = RankDay::new(user, Utc::now(), id);
+    {
+        let mut rank_day_list = RANK_DAY_LIST.lock().unwrap();
+        rank_day_list.push(rank_day);
+    }
+}
+
+
+
 async fn callback_handler(
     bot: Bot,
     cbq: CallbackQuery,
@@ -232,19 +317,34 @@ async fn callback_handler(
     if let Some(ref rank) = cbq.data {
         bot.answer_callback_query(&cbq.id).await?;
 
+        let chat_id = cbq.message.clone().unwrap().chat.id;
+
         if let Some(Message { id, chat, .. }) = cbq.message {
             if rank == "Edit" {
-                send_day_rank_message(bot.clone(), chat.id, Utc::now(), Option::from(id)).await;
-                return Ok(());
+                send_day_rank_message(
+                    bot.clone(),
+                    chat_id,
+                    None,
+                    std::option::Option::from(id)
+                ).await;
             } else if rank == "Add comment" {
                 /*
                 let mut text_message = "Add comment";
                 bot.answer_callback_query(cbq.id).await?;
                 bot.edit_message_text(cbq.message.unwrap().chat.id, cbq.message.unwrap().id, text_message).await?;
                 */
-                return Ok(());
+            } else { // rank
+                // Get user from user list and update rank
+                let mut user_list = USER_LIST.lock().unwrap();
+                for user in user_list.iter_mut() {
+                    if user.get_chat_id() == chat.id {
+                        tokio::spawn(update_rank(bot.clone(), user.clone(), id, rank.to_string()));
+                    }
+                }
+
+                //send_day_message(bot.clone(), chat.id, Utc::now(), id, rank.to_string()).await;
             }
-            send_day_message(bot.clone(), chat.id, Utc::now(), id, rank.to_string()).await;
+            return Ok(());
         } else if let Some(id) = cbq.inline_message_id {
             // bot.edit_message_text_inline(id, text_message).reply_markup(make_keyboard_answer()).await?;
             panic!("Inline mode Should be never reached !!!");
