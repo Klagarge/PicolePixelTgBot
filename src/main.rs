@@ -6,35 +6,21 @@ use crate::rank_day::RankDay;
 mod db;
 use db::*;
 
-
-use core::option;
-use std::convert::From;
 use async_std::task;
-use chrono::{DateTime, Datelike, Month, Utc};
+use chrono::{DateTime, Datelike, Utc};
 use lazy_static::lazy_static;
-use sqlx::{sqlite, Sqlite, SqlitePool};
+use sqlx::SqlitePool;
+use std::convert::From;
 use std::error::Error;
-use std::sync::{Arc, Mutex};
-use serde::de::Unexpected::Option;
-use serde_json::from_str;
 use teloxide::{
-    dispatching::dialogue::{
-        serializer::{Bincode, Json},
-        ErasedStorage, Storage,
-    },
-    payloads::SendMessageSetters,
-    prelude::*,
-    types::*,
+    payloads::SendMessageSetters, prelude::*, types::*,
     utils::command::BotCommands,
-    RequestError,
 };
 use tokio::time::Duration;
 
 lazy_static! {
     static ref LIST_RANK: [&'static str; 6] = ["0", "1", "2", "3", "4", "5"];
 }
-
-
 
 /// These commands are supported:
 #[derive(BotCommands)]
@@ -47,10 +33,8 @@ enum Command {
     Start,
     #[command(description = "display this text.")]
     Help,
-    #[command(description = "Send a photo")]
-    Photo,
-    #[command(description = "Test")]
-    Test,
+    #[command(description = "set your hour to receive message (ex: /sethour 22)")]
+    SetHour(u8),
 }
 
 #[tokio::main]
@@ -97,11 +81,12 @@ async fn poll_time(bot: Bot) {
 
         if let Some(chat_id) = chat_id {
             let user = User::new(chat_id, "test".to_string(), None);
-            let time = Utc::now()+chrono::Duration::days(1);
-            let msg_id = send_day_rank_message(bot.clone(), chat_id, std::option::Option::from(time), None).await;
+            let time = Utc::now() + chrono::Duration::days(1);
+            let msg_id =
+                send_day_rank_message(bot.clone(), chat_id, std::option::Option::from(time), None)
+                    .await;
             let rank_day = RankDay::new(user, time, msg_id);
             tokio::spawn(add_rank_day(rank_day));
-
         }
         task::sleep(Duration::from_secs(30)).await;
     }
@@ -125,12 +110,26 @@ fn get_month(month: u32) -> &'static str {
     }
 }
 
-async fn send_day_rank_message(bot: Bot, chat_id: ChatId, utc_time: option::Option<DateTime<Utc>>, id_msg: std::option::Option<MessageId>) -> MessageId {
+/// This function send a message with a keyboard to choose a rank
+///
+/// # Arguments
+///
+/// * `bot` - The bot for sending message
+/// * `chat_id` - The chat id for sending message
+/// * `utc_time` - The date for the evaluated day (if None, the date is get from the rank day list)
+/// * `id_msg` - The message id for edit message (if None, the message is send)
+///
+/// # Return
+/// Return the message id of the message send or edit
+async fn send_day_rank_message(
+    bot: Bot,
+    chat_id: ChatId,
+    utc_time: Option<DateTime<Utc>>,
+    id_msg: Option<MessageId>,
+) -> MessageId {
     // Define utc time from rank day time if None
-
-
-    let mut time = Utc::now()+chrono::Duration::days(2);
-        match utc_time {
+    let time;
+    match utc_time {
         Some(utc_time) => time = utc_time,
         None => time = get_time(chat_id, id_msg.unwrap()).await.unwrap(),
     };
@@ -155,16 +154,20 @@ async fn send_day_rank_message(bot: Bot, chat_id: ChatId, utc_time: option::Opti
     // Send message or edit message
     let msg = match id_msg {
         Some(id_msg) => {
+            // Edit message
             bot.edit_message_text(chat_id, id_msg, text_message)
                 .reply_markup(InlineKeyboardMarkup::new(keyboard.clone()))
                 .await
         }
         None => {
+            // Send message
             bot.send_message(chat_id, text_message)
                 .reply_markup(InlineKeyboardMarkup::new(keyboard.clone()))
                 .await
         }
     };
+
+    // Return message id or 0 if error
     match msg {
         Ok(message) => message.id,
         Err(e) => {
@@ -174,7 +177,24 @@ async fn send_day_rank_message(bot: Bot, chat_id: ChatId, utc_time: option::Opti
     }
 }
 
-async fn send_day_message(bot: Bot, chat_id: ChatId, utc_time: DateTime<Utc>, id_msg: MessageId, rank: String) -> MessageId {
+/// This function send a message with the rank for the evaluated day
+///
+/// # Arguments
+/// * `bot` - The bot for sending message
+/// * `chat_id` - The chat id for sending message
+/// * `utc_time` - The date for the evaluated day
+/// * `id_msg` - The message id for edit message
+/// * `rank` - The rank for the evaluated day
+///
+/// # Return
+/// Return the message id of the message send or edit
+async fn send_day_message(
+    bot: Bot,
+    chat_id: ChatId,
+    utc_time: DateTime<Utc>,
+    id_msg: MessageId,
+    rank: String,
+) -> MessageId {
     // Format message with date and rank
     let day = utc_time.day();
     let weekday = utc_time.weekday();
@@ -200,57 +220,56 @@ async fn send_day_message(bot: Bot, chat_id: ChatId, utc_time: DateTime<Utc>, id
         .edit_message_text(chat_id, id_msg, text_message)
         .reply_markup(InlineKeyboardMarkup::new(keyboard.clone()))
         .await;
-    id_msg
+    msg.unwrap().id
 }
 
+/// Handler for message
+///
+/// # Arguments
+/// * `bot` - The bot
+/// * `msg` - The message received
+/// * `me` - The bot information
+///
+/// # Return
+/// Return Ok if no error
 async fn message_handler(
     bot: Bot,
     msg: Message,
     me: Me,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    println!("Chat id: {}", msg.chat.id);
     if let Some(text) = msg.text() {
         match BotCommands::parse(text, me.username()) {
-
+            // Handle the command `/start`
             Ok(Command::Start) => {
                 // Create user and add to user list
                 let username = msg.chat.username().expect("Username not found");
+                println!("Chat id: {} is with {}", msg.chat.id, username);
                 let user = User::new(msg.chat.id, username.to_string(), None);
                 tokio::spawn(add_user(user.clone()));
 
-                //tokio::spawn(create_rank_day(bot.clone(), user.clone()));
-
+                // Create rank day and add to rank day list
                 let time = Utc::now();
-                let msg_id = send_day_rank_message(bot.clone(), msg.chat.id, std::option::Option::from(time), None).await;
+                let msg_id = send_day_rank_message(
+                    bot.clone(),
+                    msg.chat.id,
+                    std::option::Option::from(time),
+                    None,
+                )
+                .await;
                 let rank_day = RankDay::new(user, time, msg_id);
                 tokio::spawn(add_rank_day(rank_day));
-
-
-                // Send message
-                //tokio::spawn(send_day_rank_message(bot.clone(), msg.chat.id, Utc::now(), None));
-
-
+                // TODO: Send welcome message
             }
 
+            // Handle the command `/help`
             Ok(Command::Help) => {
                 bot.send_message(msg.chat.id, Command::descriptions().to_string())
                     .await?;
             }
 
-            Ok(Command::Photo) => {
-                bot.send_chat_action(msg.chat.id, ChatAction::UploadPhoto)
-                    .await?;
-                let img = bot.get_user_profile_photos(msg.from().unwrap().id).await?;
-                bot.send_photo(
-                    msg.chat.id,
-                    InputFile::file_id(img.photos[0][0].clone().file.id),
-                )
-                .await?;
-            }
-
-            Ok(Command::Test) => {
-                let text_message = "Ok, i record your Id chat";
-                bot.send_message(msg.chat.id, text_message).await?;
+            // Handle the command `/sethour`
+            Ok(Command::SetHour(hour)) => {
+                tokio::spawn(set_hour(msg.chat.id, hour));
             }
 
             Err(_) => {
@@ -261,8 +280,6 @@ async fn message_handler(
 
     Ok(())
 }
-
-
 
 async fn callback_handler(
     bot: Bot,
@@ -275,28 +292,50 @@ async fn callback_handler(
 
         if let Some(Message { id, chat, .. }) = cbq.message {
             if rank == "Edit" {
-                send_day_rank_message(
+                /********
+                 * EDIT *
+                 ********/
+
+                // If edit, send message with rank day list
+                tokio::spawn(send_day_rank_message(
                     bot.clone(),
-                    chat_id,
+                    chat.id,
                     None,
-                    std::option::Option::from(id)
-                ).await;
+                    std::option::Option::from(id),
+                ));
+
+                // Clear rank in rank day list
+                tokio::spawn(clear_rank_in_rank_day_list(chat.id, id));
+
             } else if rank == "Add comment" {
-                /*
-                let mut text_message = "Add comment";
-                bot.answer_callback_query(cbq.id).await?;
-                bot.edit_message_text(cbq.message.unwrap().chat.id, cbq.message.unwrap().id, text_message).await?;
-                */
-            } else { // rank
-                // Get user from user list and update rank
-                tokio::spawn(update_rank_in_rank_day_list(chat_id, id, rank.parse::<u8>().unwrap()));
+                /***********
+                 * COMMENT *
+                 ***********/
+
+                // TODO: Add comment
+            } else {
+                /********
+                 * RANK *
+                 ********/
+
+                // Update rank in rank day list
+                tokio::spawn(update_rank_in_rank_day_list(
+                    chat.id,
+                    id,
+                    rank.parse::<u8>().unwrap(),
+                ));
+
+                // Send message with rank
                 let time = get_time(chat_id, id).await.unwrap();
-                send_day_message(bot.clone(), chat.id, time, id, rank.to_string()).await;
+                tokio::spawn(send_day_message(
+                    bot.clone(),
+                    chat.id,
+                    time,
+                    id,
+                    rank.to_string(),
+                ));
             }
             return Ok(());
-        } else if let Some(id) = cbq.inline_message_id {
-            // bot.edit_message_text_inline(id, text_message).reply_markup(make_keyboard_answer()).await?;
-            panic!("Inline mode Should be never reached !!!");
         }
     }
 

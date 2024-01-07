@@ -33,10 +33,6 @@ impl RankDay {
         self.id_msg_
     }
 
-    pub fn get_rank(&self) -> Option<u8> {
-        self.rank_
-    }
-
     pub fn set_rank(&mut self, rank: u8) {
         self.rank_ = Option::from(rank);
     }

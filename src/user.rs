@@ -12,7 +12,7 @@ impl User {
         User {
             chat_id_: chat_id,
             username_: username,
-            hour_: hour.unwrap_or(0),
+            hour_: hour.unwrap_or(22),
         }
     }
 

@@ -1,15 +1,14 @@
-use std::sync::{Arc, Mutex};
+use crate::rank_day::RankDay;
+use crate::user::User;
 use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
 use sqlx::SqlitePool;
+use std::sync::{Arc, Mutex};
 use teloxide::types::{ChatId, MessageId};
-use crate::rank_day::RankDay;
-use crate::user::User;
 
 pub struct Db {
     pool: Arc<SqlitePool>,
 }
-
 
 lazy_static! {
     #[derive(Clone)]
@@ -68,6 +67,16 @@ pub async fn add_user(user: User) {
     user_list.push(user);
 }
 
+pub async fn set_hour(chat_id: ChatId, hour: u8) {
+    let mut user_list = get_user_list();
+    let mut user_list = user_list.lock().unwrap();
+    for user in user_list.iter_mut() {
+        if user.get_chat_id() == chat_id {
+            user.set_hour(hour);
+        }
+    }
+}
+
 pub async fn add_rank_day(rank_day: RankDay) {
     let mut rank_day_list = get_rank_day_list();
     let mut rank_day_list = rank_day_list.lock().unwrap();
@@ -80,6 +89,16 @@ pub async fn update_rank_in_rank_day_list(id_chat: ChatId, id_msg: MessageId, ra
     for rank_day in rank_day_list.iter_mut() {
         if rank_day.get_chat_id() == id_chat && rank_day.get_id_msg() == id_msg {
             rank_day.set_rank(rank);
+        }
+    }
+}
+
+pub async fn clear_rank_in_rank_day_list(id_chat: ChatId, id_msg: MessageId) {
+    let mut rank_day_list = get_rank_day_list();
+    let mut rank_day_list = rank_day_list.lock().unwrap();
+    for rank_day in rank_day_list.iter_mut() {
+        if rank_day.get_chat_id() == id_chat && rank_day.get_id_msg() == id_msg {
+            rank_day.clear_rank();
         }
     }
 }
