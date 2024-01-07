@@ -9,6 +9,6 @@ RUN git clone https://github.com/Klagarge/PicolePixelTgBot.git ./
 
 RUN cargo install --path .
 
-CMD ["PicolePixelBot"]
+CMD ["picole_pixel_bot"]
 
 # Don't forget to have a .env file with the bot token
