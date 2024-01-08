@@ -1,10 +1,11 @@
-use std::fmt::format;
-use std::ops::Deref;
 use crate::rank_day::RankDay;
 use crate::user::User;
 use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
-use sqlx::{Connection, Error, Executor, SqliteConnection, SqlitePool};
+use sqlx::sqlite::SqliteRow;
+use sqlx::{Connection, Error, Executor, Row, SqliteConnection, SqlitePool, Statement};
+use std::fmt::format;
+use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use teloxide::types::{ChatId, MessageId};
 
@@ -17,20 +18,72 @@ pub async fn connect(path: String) -> Result<SqliteConnection, Error> {
 }
 
 impl Db {
-    pub async fn new(path: String) -> Db{
-        Db {
-            pool_: connect(path).await.unwrap()
-        }
+    pub async fn new(path: String) -> Db {
+        let mut foo = Db {
+            pool_: connect(path).await.unwrap(),
+        };
+        foo.pool_.execute(
+            "CREATE TABLE IF NOT EXISTS User (\
+            id INTEGER CONSTRAINT user_pk PRIMARY KEY AUTOINCREMENT,\
+            chat_id INTEGER(8) NOT NULL CONSTRAINT user_chat_id UNIQUE,\
+            username TEXT NOT NULL,\
+            hour INTEGER(1) NOT NULL DEFAULT 22\
+        )",
+        );
+        foo
         // TODO create table users and rank_days if not exist
     }
 
+    pub async fn add_user(&mut self, user: User) {
+        let stmt = self
+            .pool_
+            .prepare("SELECT id, username FROM User WHERE chat_id = ?")
+            .await
+            .unwrap();
 
-    pub async fn add_user(&self, user: User) {
+        let query = stmt
+            .query()
+            .bind(user.get_chat_id().0);
+
+        let result = query.fetch_optional(&mut self.pool_).await.unwrap();
+
+        match result {
+            None => {
+                // add user
+                let stmt = self
+                    .pool_
+                    .prepare("INSERT INTO User (chat_id, username, hour) VALUES (?, ?, ?)")
+                    .await
+                    .unwrap();
+                let query =
+                    stmt.query().bind(user.get_chat_id().0).bind(user.get_username()).bind(user.get_hour());
+                query
+                    .execute(&mut self.pool_)
+                    .await
+                    .expect("Error when inserting new user");
+            }
+            Some(row) => {
+                // modify username
+                let stmt = self
+                    .pool_
+                    .prepare("UPDATE User SET username=? WHERE id=?")
+                    .await
+                    .unwrap();
+                let id: i64 = row.try_get("id").unwrap();
+                let query = stmt.query().bind(user.get_username()).bind(id);
+                query
+                    .execute(&mut self.pool_)
+                    .await
+                    .expect("Error when updating user");
+            }
+        }
+
         // TODO add user on table users only if user doesn't exist
     }
 
-    pub async fn get_user_by_chat_id(&mut self, chat_id: ChatId) -> Option<User>{
+    pub async fn get_user_by_chat_id(&mut self, chat_id: ChatId) -> Option<User> {
         // TODO get user form Users table with his chat_id
+        /*
         let query = "SELECT * FROM users WHERE chat_id == ?";
         let mut rows = sqlx::query(query)
             .bind(chat_id)
@@ -39,13 +92,14 @@ impl Db {
         let mut usr: Option<User> = None;
         while let Some(row) = rows.try_next().await? {
             let cid: ChatId = row.try_get("chat_id")?;
-            let name : String = row.try_get("username")?;
+            let name: String = row.try_get("username")?;
             let hour: u8 = row.try_get("hour")?;
             usr = Option::from(User::new(cid, name, Option::from(hour)));
             println!("Find user {} for {} chat id. h = {}", name, cid, hour);
         }
         usr
-
+        */
+        Option::from(User::new(chat_id, "toto".to_string(), None))
     }
 }
 

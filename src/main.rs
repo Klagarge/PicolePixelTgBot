@@ -12,10 +12,7 @@ use lazy_static::lazy_static;
 use sqlx::SqlitePool;
 use std::convert::From;
 use std::error::Error;
-use teloxide::{
-    payloads::SendMessageSetters, prelude::*, types::*,
-    utils::command::BotCommands,
-};
+use teloxide::{payloads::SendMessageSetters, prelude::*, types::*, utils::command::BotCommands};
 use tokio::time::Duration;
 
 lazy_static! {
@@ -46,6 +43,7 @@ async fn main() {
 
     // Create the bot
     let bot = Bot::from_env();
+    let myDb = Db::new("sqlite:database.sqlite".to_string()).await;
 
     bot.set_my_commands(Command::bot_commands())
         .await
@@ -53,7 +51,7 @@ async fn main() {
 
     tokio::spawn(poll_time(bot.clone()));
 
-    let pool = SqlitePool::connect("sqlite:database.sqlite").await;
+    //let pool = SqlitePool::connect("sqlite:database.sqlite").await;
 
     // Create the dispatcher
     let handler = dptree::entry()
@@ -306,7 +304,6 @@ async fn callback_handler(
 
                 // Clear rank in rank day list
                 tokio::spawn(clear_rank_in_rank_day_list(chat.id, id));
-
             } else if rank == "Add comment" {
                 /***********
                  * COMMENT *
