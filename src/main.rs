@@ -12,11 +12,21 @@ use lazy_static::lazy_static;
 use sqlx::SqlitePool;
 use std::convert::From;
 use std::error::Error;
+use std::ops::Deref;
+use std::sync::{Arc, Mutex};
+use async_once::AsyncOnce;
 use teloxide::{payloads::SendMessageSetters, prelude::*, types::*, utils::command::BotCommands};
 use tokio::time::Duration;
 
 lazy_static! {
     static ref LIST_RANK: [&'static str; 6] = ["0", "1", "2", "3", "4", "5"];
+}
+
+lazy_static! {
+    static ref DATABASE: AsyncOnce<Database> = AsyncOnce::new(async {
+        Database::new("sqlite:database.sqlite".to_string())
+        .await
+    });
 }
 
 /// These commands are supported:
@@ -43,7 +53,6 @@ async fn main() {
 
     // Create the bot
     let bot = Bot::from_env();
-    let myDb = Db::new("sqlite:database.sqlite".to_string()).await;
 
     bot.set_my_commands(Command::bot_commands())
         .await
@@ -243,7 +252,9 @@ async fn message_handler(
                 let username = msg.chat.username().expect("Username not found");
                 println!("Chat id: {} is with {}", msg.chat.id, username);
                 let user = User::new(msg.chat.id, username.to_string(), None);
-                tokio::spawn(add_user(user.clone()));
+                //let mut db = DATABASE.lock().unwrap().get().await;
+                //db.add_user(user.clone()).await;
+
 
                 // Create rank day and add to rank day list
                 let time = Utc::now();

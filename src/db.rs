@@ -2,41 +2,37 @@ use crate::rank_day::RankDay;
 use crate::user::User;
 use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
-use sqlx::sqlite::SqliteRow;
+use sqlx::sqlite::{SqliteQueryResult, SqliteRow};
 use sqlx::{Connection, Error, Executor, Row, SqliteConnection, SqlitePool, Statement};
 use std::fmt::format;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use teloxide::types::{ChatId, MessageId};
 
-pub struct Db {
-    pool_: SqliteConnection,
+
+pub struct Database {
+    connection_: SqliteConnection,
 }
 
-pub async fn connect(path: String) -> Result<SqliteConnection, Error> {
-    SqliteConnection::connect(path.as_str()).await
-}
-
-impl Db {
-    pub async fn new(path: String) -> Db {
-        let mut foo = Db {
-            pool_: connect(path).await.unwrap(),
-        };
-        foo.pool_.execute(
+impl Database {
+    pub async fn new(path: String) -> Database {
+        let mut conn = SqliteConnection::connect(path.as_str()).await.unwrap();
+        conn.execute(
             "CREATE TABLE IF NOT EXISTS User (\
-            id INTEGER CONSTRAINT user_pk PRIMARY KEY AUTOINCREMENT,\
-            chat_id INTEGER(8) NOT NULL CONSTRAINT user_chat_id UNIQUE,\
-            username TEXT NOT NULL,\
-            hour INTEGER(1) NOT NULL DEFAULT 22\
-        )",
+                    id INTEGER CONSTRAINT user_pk PRIMARY KEY AUTOINCREMENT,\
+                    chat_id INTEGER(8) NOT NULL CONSTRAINT user_chat_id UNIQUE,\
+                    username TEXT NOT NULL,\
+                    hour INTEGER(1) NOT NULL DEFAULT 22)"
         );
-        foo
-        // TODO create table users and rank_days if not exist
+        Database {
+            connection_: conn,
+        }
     }
 
     pub async fn add_user(&mut self, user: User) {
-        let stmt = self
-            .pool_
+        //let mut conn = self.connection_.as_mut().unwrap();
+
+        let stmt = self.connection_
             .prepare("SELECT id, username FROM User WHERE chat_id = ?")
             .await
             .unwrap();
@@ -45,34 +41,37 @@ impl Db {
             .query()
             .bind(user.get_chat_id().0);
 
-        let result = query.fetch_optional(&mut self.pool_).await.unwrap();
+        let result = query.fetch_optional(&mut self.connection_).await.unwrap();
 
         match result {
             None => {
                 // add user
-                let stmt = self
-                    .pool_
+                let stmt = self.connection_
                     .prepare("INSERT INTO User (chat_id, username, hour) VALUES (?, ?, ?)")
                     .await
                     .unwrap();
-                let query =
-                    stmt.query().bind(user.get_chat_id().0).bind(user.get_username()).bind(user.get_hour());
+
+                let query = stmt
+                    .query()
+                    .bind(user.get_chat_id().0)
+                    .bind(user.get_username())
+                    .bind(user.get_hour());
+
                 query
-                    .execute(&mut self.pool_)
+                    .execute(&mut self.connection_)
                     .await
                     .expect("Error when inserting new user");
             }
             Some(row) => {
                 // modify username
-                let stmt = self
-                    .pool_
+                let stmt = self.connection_
                     .prepare("UPDATE User SET username=? WHERE id=?")
                     .await
                     .unwrap();
                 let id: i64 = row.try_get("id").unwrap();
                 let query = stmt.query().bind(user.get_username()).bind(id);
                 query
-                    .execute(&mut self.pool_)
+                    .execute(&mut self.connection_)
                     .await
                     .expect("Error when updating user");
             }
