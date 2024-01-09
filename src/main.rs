@@ -25,7 +25,6 @@ lazy_static! {
 lazy_static! {
     static ref DATABASE: AsyncOnce<Database> = AsyncOnce::new(async {
         Database::new("sqlite:database.sqlite".to_string())
-        .await
     });
 }
 
@@ -252,8 +251,8 @@ async fn message_handler(
                 let username = msg.chat.username().expect("Username not found");
                 println!("Chat id: {} is with {}", msg.chat.id, username);
                 let user = User::new(msg.chat.id, username.to_string(), None);
-                //let mut db = DATABASE.lock().unwrap().get().await;
-                //db.add_user(user.clone()).await;
+
+                tokio::spawn(DATABASE.get().await.add_user(user.clone()));
 
 
                 // Create rank day and add to rank day list
@@ -265,7 +264,7 @@ async fn message_handler(
                     None,
                 )
                 .await;
-                let rank_day = RankDay::new(user, time, msg_id);
+                let rank_day = RankDay::new(user.clone(), time, msg_id);
                 tokio::spawn(add_rank_day(rank_day));
                 // TODO: Send welcome message
             }

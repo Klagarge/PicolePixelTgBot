@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use crate::rank_day::RankDay;
 use crate::user::User;
 use chrono::{DateTime, Utc};
@@ -6,33 +7,38 @@ use sqlx::sqlite::{SqliteQueryResult, SqliteRow};
 use sqlx::{Connection, Error, Executor, Row, SqliteConnection, SqlitePool, Statement};
 use std::fmt::format;
 use std::ops::Deref;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use teloxide::types::{ChatId, MessageId};
+use tokio::runtime::Runtime;
 
 
 pub struct Database {
-    connection_: SqliteConnection,
+    pub(crate) connection_: Rc<RefCell<SqliteConnection>>,
 }
 
 impl Database {
-    pub async fn new(path: String) -> Database {
-        let mut conn = SqliteConnection::connect(path.as_str()).await.unwrap();
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS User (\
-                    id INTEGER CONSTRAINT user_pk PRIMARY KEY AUTOINCREMENT,\
-                    chat_id INTEGER(8) NOT NULL CONSTRAINT user_chat_id UNIQUE,\
-                    username TEXT NOT NULL,\
-                    hour INTEGER(1) NOT NULL DEFAULT 22)"
-        );
-        Database {
-            connection_: conn,
-        }
+    pub fn new(path: String) -> Database {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let mut conn = SqliteConnection::connect(path.as_str()).await.unwrap();
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS User (\
+                        id INTEGER CONSTRAINT user_pk PRIMARY KEY AUTOINCREMENT,\
+                        chat_id INTEGER(8) NOT NULL CONSTRAINT user_chat_id UNIQUE,\
+                        username TEXT NOT NULL,\
+                        hour INTEGER(1) NOT NULL DEFAULT 22)"
+            ).await.unwrap();
+            Database {
+                connection_: Rc::new(RefCell::new(conn)),
+            }
+        })
     }
 
-    pub async fn add_user(&mut self, user: User) {
-        //let mut conn = self.connection_.as_mut().unwrap();
+    pub async fn add_user(&self, user: User) {
+        let mut conn = self.connection_.borrow_mut();
+        let conn = &mut *conn;
 
-        let stmt = self.connection_
+        let stmt = conn
             .prepare("SELECT id, username FROM User WHERE chat_id = ?")
             .await
             .unwrap();
@@ -41,12 +47,12 @@ impl Database {
             .query()
             .bind(user.get_chat_id().0);
 
-        let result = query.fetch_optional(&mut self.connection_).await.unwrap();
+        let result = query.fetch_optional(&mut *conn).await.unwrap();
 
         match result {
             None => {
                 // add user
-                let stmt = self.connection_
+                let stmt = conn
                     .prepare("INSERT INTO User (chat_id, username, hour) VALUES (?, ?, ?)")
                     .await
                     .unwrap();
@@ -58,20 +64,20 @@ impl Database {
                     .bind(user.get_hour());
 
                 query
-                    .execute(&mut self.connection_)
+                    .execute(&mut *conn)
                     .await
                     .expect("Error when inserting new user");
             }
             Some(row) => {
                 // modify username
-                let stmt = self.connection_
+                let stmt = conn
                     .prepare("UPDATE User SET username=? WHERE id=?")
                     .await
                     .unwrap();
                 let id: i64 = row.try_get("id").unwrap();
                 let query = stmt.query().bind(user.get_username()).bind(id);
                 query
-                    .execute(&mut self.connection_)
+                    .execute(&mut *conn)
                     .await
                     .expect("Error when updating user");
             }
