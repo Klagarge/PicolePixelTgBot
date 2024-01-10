@@ -21,8 +21,17 @@ impl RankDay {
         }
     }
 
+
     pub fn get_chat_id(&self) -> ChatId {
         self.user_.get_chat_id()
+    }
+
+    pub fn get_rank(&self) -> Option<u8> {
+        self.rank_
+    }
+
+    pub fn get_user(&self) -> User {
+        self.user_.clone()
     }
 
     pub fn get_time(&self) -> DateTime<Utc> {

@@ -16,6 +16,7 @@ use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use async_once::AsyncOnce;
 use teloxide::{payloads::SendMessageSetters, prelude::*, types::*, utils::command::BotCommands};
+use teloxide::types::DiceEmoji::Darts;
 use tokio::time::Duration;
 
 lazy_static! {
@@ -23,9 +24,7 @@ lazy_static! {
 }
 
 lazy_static! {
-    static ref DATABASE: AsyncOnce<Database> = AsyncOnce::new(async {
-        Database::new("sqlite:database.sqlite".to_string())
-    });
+    static ref DATABASE: Database = Database::new("sqlite:database.sqlite".to_string());
 }
 
 /// These commands are supported:
@@ -59,6 +58,8 @@ async fn main() {
 
     tokio::spawn(poll_time(bot.clone()));
 
+    tokio::spawn((DATABASE.create_table()));
+
     //let pool = SqlitePool::connect("sqlite:database.sqlite").await;
 
     // Create the dispatcher
@@ -76,6 +77,7 @@ async fn main() {
 async fn poll_time(bot: Bot) {
     loop {
         // Get all chat id from user list
+        /*
         let chat_id = {
             let user_list = db::USER_LIST.lock().unwrap();
             if user_list.len() == 0 {
@@ -92,8 +94,9 @@ async fn poll_time(bot: Bot) {
                 send_day_rank_message(bot.clone(), chat_id, std::option::Option::from(time), None)
                     .await;
             let rank_day = RankDay::new(user, time, msg_id);
-            tokio::spawn(add_rank_day(rank_day));
+            tokio::spawn(DATABASE.add_rank_day(rank_day));
         }
+        */
         task::sleep(Duration::from_secs(30)).await;
     }
 }
@@ -135,9 +138,13 @@ async fn send_day_rank_message(
 ) -> MessageId {
     // Define utc time from rank day time if None
     let time;
+    let time_in_db = match id_msg {
+        Some(id_msg) => DATABASE.get_time(chat_id, id_msg).await.unwrap_or(Utc::now()),
+        None => Utc::now(),
+    };
     match utc_time {
         Some(utc_time) => time = utc_time,
-        None => time = get_time(chat_id, id_msg.unwrap()).await.unwrap(),
+        None => time = time_in_db,
     };
 
     // Format message with date
@@ -252,8 +259,7 @@ async fn message_handler(
                 println!("Chat id: {} is with {}", msg.chat.id, username);
                 let user = User::new(msg.chat.id, username.to_string(), None);
 
-                tokio::spawn(DATABASE.get().await.add_user(user.clone()));
-
+                tokio::spawn(DATABASE.add_user(user.clone()));
 
                 // Create rank day and add to rank day list
                 let time = Utc::now();
@@ -265,7 +271,7 @@ async fn message_handler(
                 )
                 .await;
                 let rank_day = RankDay::new(user.clone(), time, msg_id);
-                tokio::spawn(add_rank_day(rank_day));
+                tokio::spawn(DATABASE.add_rank_day(rank_day));
                 // TODO: Send welcome message
             }
 
@@ -333,7 +339,7 @@ async fn callback_handler(
                 ));
 
                 // Send message with rank
-                let time = get_time(chat_id, id).await.unwrap();
+                let time = DATABASE.get_time(chat_id, id).await.expect("Failed to get time");
                 tokio::spawn(send_day_message(
                     bot.clone(),
                     chat.id,
