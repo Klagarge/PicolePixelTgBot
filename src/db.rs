@@ -235,12 +235,17 @@ impl Database {
             .await
             .unwrap();
 
+        let h = hour.clone();
+
         let query = stmt
             .query()
-            .bind(id_chat.0)
-            .bind(hour);
+            .bind(h)
+            .bind(id_chat.0);
 
-        query.fetch_optional(&mut conn).await.unwrap();
+        query
+            .execute(&mut conn)
+            .await
+            .expect("Error when update hour");
 
         conn.close();
 
