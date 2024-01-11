@@ -7,7 +7,7 @@ mod db;
 use db::*;
 
 use async_std::task;
-use chrono::{DateTime, Datelike, Utc};
+use chrono::{DateTime, Datelike, Utc, Timelike, Local, TimeZone};
 use lazy_static::lazy_static;
 use sqlx::SqlitePool;
 use std::convert::From;
@@ -76,28 +76,31 @@ async fn main() {
 
 async fn poll_time(bot: Bot) {
     loop {
-        // Get all chat id from user list
-        /*
-        let chat_id = {
-            let user_list = db::USER_LIST.lock().unwrap();
-            if user_list.len() == 0 {
-                None
-            } else {
-                Some(user_list[0].get_chat_id())
-            }
-        };
 
-        if let Some(chat_id) = chat_id {
-            let user = User::new(chat_id, "test".to_string(), None);
-            let time = Utc::now() + chrono::Duration::days(1);
-            let msg_id =
-                send_day_rank_message(bot.clone(), chat_id, std::option::Option::from(time), None)
-                    .await;
-            let rank_day = RankDay::new(user, time, msg_id);
-            tokio::spawn(DATABASE.add_rank_day(rank_day));
+        let users = DATABASE.get_hours().await;
+
+        let now = Utc::now();
+        let hour = now.hour()+1;
+
+
+
+        for user in users {
+            if now.minute() == 0 {
+                if user.1 as u32 == hour {
+                    let msg_id = send_day_rank_message(
+                        bot.clone(),
+                        user.0,
+                        std::option::Option::from(now),
+                        None,
+                    ).await;
+                    let usr = DATABASE.get_user_by_chat_id(user.0).await.unwrap();
+                    let rank_day = RankDay::new(usr, now, msg_id);
+                    tokio::spawn(DATABASE.add_rank_day(rank_day));
+                }
+            }
         }
-        */
-        task::sleep(Duration::from_secs(30)).await;
+
+        task::sleep(Duration::from_secs(5)).await;
     }
 }
 
@@ -283,7 +286,7 @@ async fn message_handler(
 
             // Handle the command `/sethour`
             Ok(Command::SetHour(hour)) => {
-                tokio::spawn(set_hour(msg.chat.id, hour));
+                tokio::spawn(DATABASE.set_hour(msg.chat.id, hour));
             }
 
             Err(_) => {
@@ -319,7 +322,11 @@ async fn callback_handler(
                 ));
 
                 // Clear rank in rank day list
-                tokio::spawn(clear_rank_in_rank_day_list(chat.id, id));
+                tokio::spawn(DATABASE.update_rank(
+                    chat.id,
+                    id,
+                    None,
+                ));
             } else if rank == "Add comment" {
                 /***********
                  * COMMENT *
@@ -330,12 +337,12 @@ async fn callback_handler(
                 /********
                  * RANK *
                  ********/
-
+                let rank = rank.parse::<u8>().unwrap();
                 // Update rank in rank day list
-                tokio::spawn(update_rank_in_rank_day_list(
+                tokio::spawn(DATABASE.update_rank(
                     chat.id,
                     id,
-                    rank.parse::<u8>().unwrap(),
+                    Option::from(rank),
                 ));
 
                 // Send message with rank
