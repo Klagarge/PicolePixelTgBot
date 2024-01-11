@@ -100,7 +100,7 @@ async fn poll_time(bot: Bot) {
             }
         }
 
-        task::sleep(Duration::from_secs(5)).await;
+        task::sleep(Duration::from_secs(60)).await;
     }
 }
 
