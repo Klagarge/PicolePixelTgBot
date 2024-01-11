@@ -1,6 +1,5 @@
 use crate::user::User;
 use chrono::{DateTime, Utc};
-use teloxide::prelude::ChatId;
 use teloxide::types::MessageId;
 
 #[derive(Clone)]
@@ -21,11 +20,6 @@ impl RankDay {
         }
     }
 
-
-    pub fn get_chat_id(&self) -> ChatId {
-        self.user_.get_chat_id()
-    }
-
     pub fn get_rank(&self) -> Option<u8> {
         self.rank_
     }
@@ -42,11 +36,4 @@ impl RankDay {
         self.id_msg_
     }
 
-    pub fn set_rank(&mut self, rank: u8) {
-        self.rank_ = Option::from(rank);
-    }
-
-    pub fn clear_rank(&mut self) {
-        self.rank_ = None;
-    }
 }

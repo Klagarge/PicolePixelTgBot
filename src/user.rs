@@ -27,8 +27,4 @@ impl User {
     pub fn get_hour(&self) -> u8 {
         self.hour_
     }
-
-    pub fn set_hour(&mut self, hour: u8) {
-        self.hour_ = hour;
-    }
 }

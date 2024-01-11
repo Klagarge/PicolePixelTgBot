@@ -3,20 +3,16 @@ use user::User;
 
 mod rank_day;
 use crate::rank_day::RankDay;
+
 mod db;
 use db::*;
 
 use async_std::task;
-use chrono::{DateTime, Datelike, Utc, Timelike, Local, TimeZone};
+use chrono::{DateTime, Datelike, Utc, Timelike};
 use lazy_static::lazy_static;
-use sqlx::SqlitePool;
 use std::convert::From;
 use std::error::Error;
-use std::ops::Deref;
-use std::sync::{Arc, Mutex};
-use async_once::AsyncOnce;
 use teloxide::{payloads::SendMessageSetters, prelude::*, types::*, utils::command::BotCommands};
-use teloxide::types::DiceEmoji::Darts;
 use tokio::time::Duration;
 
 lazy_static! {
@@ -58,9 +54,7 @@ async fn main() {
 
     tokio::spawn(poll_time(bot.clone()));
 
-    tokio::spawn((DATABASE.create_table()));
-
-    //let pool = SqlitePool::connect("sqlite:database.sqlite").await;
+    tokio::spawn(DATABASE.create_table());
 
     // Create the dispatcher
     let handler = dptree::entry()

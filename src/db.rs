@@ -1,17 +1,8 @@
-use std::cell::RefCell;
 use crate::rank_day::RankDay;
 use crate::user::User;
 use chrono::{DateTime, Utc};
-use lazy_static::lazy_static;
-use sqlx::sqlite::{SqliteQueryResult, SqliteRow};
-use sqlx::{Connection, Error, Executor, Row, SqliteConnection, SqlitePool, Statement};
-use std::fmt::format;
-use std::ops::Deref;
-use std::ptr::null;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use sqlx::{Connection, Executor, Row, SqliteConnection, Statement};
 use teloxide::types::{ChatId, MessageId};
-use tokio::runtime::Runtime;
 
 
 pub struct Database {
@@ -228,7 +219,7 @@ impl Database {
             .bind(id_chat.0)
             .bind(id_msg.0);
 
-        let result = query.fetch_optional(&mut conn).await.unwrap();
+        query.fetch_optional(&mut conn).await.unwrap();
 
         conn.close();
 
