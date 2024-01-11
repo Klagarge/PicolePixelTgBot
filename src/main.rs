@@ -258,18 +258,16 @@ async fn message_handler(
 
                 tokio::spawn(DATABASE.add_user(user.clone()));
 
-                // Create rank day and add to rank day list
-                let time = Utc::now();
-                let msg_id = send_day_rank_message(
-                    bot.clone(),
-                    msg.chat.id,
-                    std::option::Option::from(time),
-                    None,
-                )
-                .await;
-                let rank_day = RankDay::new(user.clone(), time, msg_id);
-                tokio::spawn(DATABASE.add_rank_day(rank_day));
-                // TODO: Send welcome message
+                tokio::spawn({
+                    let bot = bot.clone();
+                    let mut msg = format!("Welcome to Picole Pixel {} !\n", user.get_username());
+                    msg.push_str(format!("\nYou will receive every day at {}h00 a message to evaluate your day.", user.get_hour()).as_str());
+                    msg.push_str("\nYou can change the hour with the command /sethour {h} (ex: /sethour 22)." );
+                    let id = user.get_chat_id();
+                    async move {
+                        bot.send_message(id, msg).await
+                    }
+                });
             }
 
             // Handle the command `/help`
@@ -280,7 +278,7 @@ async fn message_handler(
 
             // Handle the command `/sethour`
             Ok(Command::SetHour(hour)) => {
-                tokio::spawn(DATABASE.set_hour(msg.chat.id, hour));
+                DATABASE.set_hour(msg.chat.id, hour).await;
             }
 
             Err(_) => {
