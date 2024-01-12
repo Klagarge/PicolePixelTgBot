@@ -52,9 +52,9 @@ async fn main() {
         .await
         .expect("Failed to set bot commands");
 
-    tokio::spawn(poll_time(bot.clone()));
+    DATABASE.create_table().await;
 
-    tokio::spawn(DATABASE.create_table());
+    tokio::spawn(poll_time(bot.clone()));
 
     // Create the dispatcher
     let handler = dptree::entry()
@@ -278,7 +278,18 @@ async fn message_handler(
 
             // Handle the command `/sethour`
             Ok(Command::SetHour(hour)) => {
-                DATABASE.set_hour(msg.chat.id, hour).await;
+                let result = DATABASE.set_hour(msg.chat.id, hour).await;
+                match result {
+                    Ok(_) => {
+                        let message = format!("You will receive your message for evaluate your day at {}h00 now", hour);
+                        bot.send_message(msg.chat.id, message)
+                            .await?;
+                    }
+                    Err(_) => {
+                        bot.send_message(msg.chat.id, "Error when set hour".to_string())
+                            .await?;
+                    }
+                }
             }
 
             Err(_) => {

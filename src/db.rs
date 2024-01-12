@@ -225,7 +225,7 @@ impl Database {
 
     }
 
-    pub async fn set_hour(&self, id_chat: ChatId, hour: u8) {
+    pub async fn set_hour(&self, id_chat: ChatId, hour: u8) -> Result<(), &str> {
         let mut conn = SqliteConnection::connect(self.path_.as_str()).await.unwrap();
 
         let stmt = conn
@@ -242,12 +242,15 @@ impl Database {
             .bind(h)
             .bind(id_chat.0);
 
-        query
+        let result = query
             .execute(&mut conn)
-            .await
-            .expect("Error when update hour");
+            .await;
 
         conn.close();
+        match result {
+            Ok(_) => { Ok(()) }
+            Err(_) => { Err("Error when updating hour") }
+        }
 
     }
 
@@ -258,7 +261,7 @@ impl Database {
             .prepare("SELECT chat_id, hour
                             FROM User")
             .await
-            .unwrap();
+            .expect("Error when preparing query");
 
         let query = stmt
             .query();
