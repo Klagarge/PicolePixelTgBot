@@ -45,7 +45,7 @@ impl Database {
         conn.close();
     }
 
-    pub async fn add_user(&self, user: User) {
+    pub async fn add_user(&self, user: User) -> bool {
         let mut conn = SqliteConnection::connect(self.path_.as_str()).await.unwrap();
 
         let stmt = conn
@@ -59,9 +59,11 @@ impl Database {
 
         let result = query.fetch_optional(&mut conn).await.unwrap();
 
+        let user_exist;
         match result {
             None => {
                 // add user
+                user_exist = false;
                 let stmt = conn
                     .prepare("INSERT INTO User (chat_id, username, hour) VALUES (?, ?, ?)")
                     .await
@@ -80,6 +82,7 @@ impl Database {
             }
             Some(row) => {
                 // modify username
+                user_exist = true;
                 let stmt = conn
                     .prepare("UPDATE User SET username=? WHERE id=?")
                     .await
@@ -94,6 +97,7 @@ impl Database {
         }
 
         conn.close();
+        user_exist
     }
 
     pub async fn add_rank_day(&self, rank_day: RankDay) {

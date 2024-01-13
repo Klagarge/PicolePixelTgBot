@@ -256,18 +256,32 @@ async fn message_handler(
                 println!("Chat id: {} is with {}", msg.chat.id, username);
                 let user = User::new(msg.chat.id, username.to_string(), None);
 
-                tokio::spawn(DATABASE.add_user(user.clone()));
-
-                tokio::spawn({
-                    let bot = bot.clone();
-                    let mut msg = format!("Welcome to Picole Pixel {} !\n", user.get_username());
-                    msg.push_str(format!("\nYou will receive every day at {}h00 a message to evaluate your day.", user.get_hour()).as_str());
-                    msg.push_str("\nYou can change the hour with the command /sethour {h} (ex: /sethour 22)." );
-                    let id = user.get_chat_id();
-                    async move {
-                        bot.send_message(id, msg).await
+                let user_exist = DATABASE.add_user(user.clone()).await;
+                match user_exist {
+                    true => {
+                        tokio::spawn({
+                            let bot = bot.clone();
+                            let msg = format!("Hi {} ! You already start this bot", user.get_username());
+                            let id = user.get_chat_id();
+                            async move {
+                                bot.send_message(id, msg).await
+                            }
+                        });
                     }
-                });
+                    false => {
+                        tokio::spawn({
+                            let bot = bot.clone();
+                            let mut msg = format!("Welcome to Picole Pixel {} !\n", user.get_username());
+                            msg.push_str(format!("\nYou will receive every day at {}h00 a message to evaluate your day.", user.get_hour()).as_str());
+                            msg.push_str("\nYou can change the hour with the command /sethour {h} (ex: /sethour 22)." );
+                            let id = user.get_chat_id();
+                            async move {
+                                bot.send_message(id, msg).await
+                            }
+                        });
+                    }
+                }
+
             }
 
             // Handle the command `/help`
