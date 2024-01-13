@@ -1,7 +1,10 @@
 use crate::rank_day::RankDay;
 use crate::user::User;
 use chrono::{DateTime, Utc};
+use sqlx::ConnectOptions;
 use sqlx::{Connection, Executor, Row, SqliteConnection, Statement};
+use std::str::FromStr;
+use sqlx::sqlite::SqliteConnectOptions;
 use teloxide::types::{ChatId, MessageId};
 
 
@@ -17,7 +20,12 @@ impl Database {
     }
 
     pub async fn create_table(&self) {
-        let mut conn = SqliteConnection::connect(self.path_.as_str()).await.unwrap();
+        let mut conn = SqliteConnectOptions::from_str(self.path_.as_str())
+            .expect("Failed to create database")
+            .create_if_missing(true)
+            .connect()
+            .await
+            .expect("Failed to open connection");
         conn.execute(
             "CREATE TABLE IF NOT EXISTS User (\
                         id INTEGER CONSTRAINT user_pk PRIMARY KEY AUTOINCREMENT,\
