@@ -9,7 +9,7 @@ use db::*;
 
 use std::env;
 use async_std::task;
-use chrono::{DateTime, Datelike, Utc, Timelike};
+use chrono::{DateTime, Datelike, Utc, Timelike, Local};
 use lazy_static::lazy_static;
 use std::convert::From;
 use std::error::Error;
@@ -78,7 +78,8 @@ async fn poll_time(bot: Bot) {
         let users = DATABASE.get_hours().await;
 
         let now = Utc::now();
-        let hour = now.hour()+1;
+        let offset = Local::now().hour()-now.hour();
+        let hour = now.hour()+offset;
 
 
 
