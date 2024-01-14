@@ -42,8 +42,9 @@ impl Database {
                         id INTEGER CONSTRAINT rank_day_pk PRIMARY KEY AUTOINCREMENT,\
                         user_id INTEGER NOT NULL CONSTRAINT User_id_fk REFERENCES User (id),\
                         time INTEGER(8) NOT NULL,\
-                        id_msg INTEGER(4) NOT NULL,\
-                        rank INTEGER(1))"
+                        id_msg INTEGER(4),\
+                        rank INTEGER(1), \
+                        comment TEXT)"
         ).await.unwrap();
         conn.close();
     }
