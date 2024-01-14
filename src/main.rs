@@ -7,6 +7,7 @@ use crate::rank_day::RankDay;
 mod db;
 use db::*;
 
+use std::env;
 use async_std::task;
 use chrono::{DateTime, Datelike, Utc, Timelike};
 use lazy_static::lazy_static;
@@ -20,7 +21,10 @@ lazy_static! {
 }
 
 lazy_static! {
-    static ref DATABASE: Database = Database::new("sqlite:database.sqlite".to_string());
+    static ref DATABASE: Database = Database::new(
+        env::var("PATH_DATABASE")
+        .expect("$PATH_DATABASE is not set")
+    );
 }
 
 /// These commands are supported:

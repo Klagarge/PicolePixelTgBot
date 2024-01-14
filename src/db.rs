@@ -1,3 +1,4 @@
+use std::ops::Add;
 use crate::rank_day::RankDay;
 use crate::user::User;
 use chrono::{DateTime, Utc};
@@ -14,8 +15,10 @@ pub struct Database {
 
 impl Database {
     pub fn new(path: String) -> Database {
+        let mut p = "sqlite:".to_string();
+        p = p.add(&*path);
         Database {
-            path_: path
+            path_: p
         }
     }
 
